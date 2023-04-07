@@ -1,0 +1,17 @@
+Create an Elastic IP (EIP) CloudFormation template with the following requirements:
+An Elastic IP should be created.
+The EIP should be exported for use in other stacks.
+
+
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Cloudformation template to create EC2 instance'
+Resources:
+  EIP:
+    Type: AWS::EC2::EIP
+Outputs:
+  EIP:
+    Description: EIP
+    Value: !Ref EIP
+    Export:
+      Name: EIP
