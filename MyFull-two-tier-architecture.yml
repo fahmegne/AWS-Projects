@@ -1,0 +1,457 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates a VPC, subnets, security groups, Launch Configuration, Auto Scaling Group, ALB and Route 53 record set
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "VPC CIDR"
+        Parameters:
+          - VpcCIDR
+      -
+        Label:
+          default: "Subnet CIDR"
+        Parameters:
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PrivateSubnet1CIDR
+          - PrivateSubnet2CIDR
+      -
+        Label: 
+          default: "Subnet AZs"
+        Parameters:
+          - SubnetAvailabilityZones
+
+      -
+        Label: 
+          default: "Instance Type"
+        Parameters:
+          - InstanceType
+
+      -
+        Label: 
+          default: "AMI ID"
+        Parameters:
+          - AMIID 
+
+      -
+        Label: 
+          default: "Instance User Data"
+        Parameters:
+          - InstanceUserData
+
+      - 
+        Label:
+          default: "Key Pair Name"
+        Parameters:
+          - KeyName 
+
+      -
+        Label: 
+         default: "Security Group Ingress Ports"
+        Parameters:
+          - SecurityGroupIngressPorts
+
+      -
+        Label: 
+          default: "SSH Location"
+        Parameters:
+          - SSHLocation 
+
+      -
+        Label: 
+          default: "MinSize"
+        Parameters:
+          - MinSize
+
+      -
+        Label: 
+          default: "Max Size"
+        Parameters:
+          - MaxSize
+
+      -
+        Label: 
+          default: "Desired Capacity"
+        Parameters:
+          - DesiredCapacity
+
+      -
+        Label: 
+          default: "Hosted Zone ID"
+        Parameters:
+          - HostedZoneId 
+
+      -
+        Label: 
+          default: "Record Name"
+        Parameters:
+          - RecordName 
+
+      -
+        Label: 
+          default: "Record Type"
+        Parameters:
+          - RecordType
+
+      
+
+
+Parameters:
+    VpcCIDR:
+     Default: 10.0.0.0/16
+     Description: Please enter the IP Range for this VPC
+     Type: String
+
+    PublicSubnet1CIDR:
+      Default: 10.0.0.0/24
+      Description: Please enter the IP Range for the public subnet 1
+      Type: String
+
+    PublicSubnet2CIDR:
+      Default: 10.0.1.0/24
+      Description: Please enter the IP Range for the public subnet 2
+      Type: String
+
+    PrivateSubnet1CIDR:
+      Default: 10.0.2.0/24
+      Description: Please enter the IP Range for the private subnet 1
+      Type: String
+
+    PrivateSubnet2CIDR:
+      Default: 10.0.3.0/24
+      Description: Please enter the IP Range for the private subnet 2
+      Type: String
+
+    SubnetAvailabilityZones:
+      Type: List<AWS::EC2::AvailabilityZone::Name>
+      Description: Select the two availability zones where the resources should be launched
+      Default: "us-east-1a,us-east-1b"
+      AllowedValues: 
+        - us-east-1a
+        - us-east-1b
+        - us-east-1d
+        - us-east-1e 
+        - us-east-1f
+      ConstraintDescription: Please select exactly two 
+      
+
+    InstanceType: 
+      Description: Webserver EC2 Instance Type 
+      Type: String
+      Default: t2.micro
+      AllowedValues:
+        - t2.micro
+        - t2.nano
+        - t2.small
+        - t2.medium
+
+    AMIID:
+      Description: The EC2 AMI id
+      Type: String
+      Default: ami-06e46074ae430fba6 
+      ConstraintDescription: Must be a valid AMI based on the region
+
+    InstanceUserData:
+      Type: String
+      Description: User data to run on the EC2 Instances
+      AllowedPattern: '[\s\S]*'
+      ConstraintDescription: Must be a valid user data script content 
+      Default: | 
+          #!/bin/bash
+          # get admin privileges
+          sudo su
+          # install httpd 
+          yum update -y
+          yum install -y httpd.x86_64
+          systemctl start httpd.service
+          systemctl enable httpd.service
+          sh -c "echo 'Hello World!' > /var/www/html/index.html" 
+
+    KeyName:
+      Description: Name of an existing EC2 KeyPair to enable SSH access to the instance
+      Type: AWS::EC2::KeyPair::KeyName
+      ConstraintDescription: must be the name of an existing EC2 KeyPair.
+
+    SecurityGroupIngressPorts:
+      Type: List<Number>
+      Description: List of ingress ports to open on the security group.
+      Default: "80,22,443"
+      AllowedValues: [80, 22, 443, 8080, 8443] # optional, add any additional allowed port numbers
+
+
+    SSHLocation:
+      AllowedPattern: '(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})'
+      ConstraintDescription: must be a valid IP CIDR range of the form x.x.x.x/x.
+      Default: 0.0.0.0/0
+      Description: The IP address range that can be used to access the web server using SSH.
+      MaxLength: '18'
+      MinLength: '9'
+      Type: String
+
+    
+
+    MinSize:
+      Type: Number
+      Default: 1
+      Description: Minimum number of instances in the Auto Scaling Group
+    MaxSize:
+      Type: Number
+      Default: 3
+      Description: Maximum number of instances in the Auto Scaling Group
+    DesiredCapacity:
+      Type: Number
+      Default: 2
+      Description: Desired number of instances in the Auto Scaling Group 
+
+    HostedZoneId:
+      Type: String
+      Description: ID of the Hosted Zone for the DNS record
+      Default: Z0113794316SP2F474UKB 
+    RecordName:
+      Type: String
+      Description: Name of the DNS record
+      Default: frankafashion.link
+    RecordType:
+      Type: String
+      Description: Type of the DNS record
+      Default: A
+
+
+
+
+
+Resources:
+  Vpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR 
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: my-vpc
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [ 0, !Ref SubnetAvailabilityZones ]
+      CidrBlock: !Ref PublicSubnet1CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: my-public-subnet-1
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [ 1, !Ref SubnetAvailabilityZones ]
+      CidrBlock: !Ref PublicSubnet2CIDR
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: my-public-subnet-2
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [ 0, !Ref SubnetAvailabilityZones ]
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: my-private-subnet-1
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref Vpc
+      AvailabilityZone: !Select [ 1, !Ref SubnetAvailabilityZones ]
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: my-private-subnet-2
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: my-internet-gateway
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref Vpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: my-public-route-table
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref Vpc
+      Tags:
+        - Key: Name
+          Value: my-private-route-table
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: my-alb
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: my-alb
+
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: HTTP
+
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: my-target-group
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      VpcId: !Ref Vpc
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for ALB
+      VpcId: !Ref Vpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0 
+      Tags:
+        - Key: Name
+          Value: my-alb-security-group
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow incoming traffic to ports 80, 22 and 443
+      VpcId: !Ref Vpc 
+      SecurityGroupIngress:
+
+        - IpProtocol: tcp
+          FromPort: !Select [0, !Ref SecurityGroupIngressPorts]
+          ToPort: !Select [0, !Ref SecurityGroupIngressPorts]
+          CidrIp: 0.0.0.0/0
+
+        - IpProtocol: tcp
+          FromPort: !Select [1, !Ref SecurityGroupIngressPorts]
+          ToPort: !Select [1, !Ref SecurityGroupIngressPorts]
+          CidrIp: 0.0.0.0/0
+
+        - IpProtocol: tcp
+          FromPort: !Select [2, !Ref SecurityGroupIngressPorts]
+          ToPort: !Select [2, !Ref SecurityGroupIngressPorts]
+          CidrIp: 0.0.0.0/0
+
+
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AMIID
+      InstanceType: !Ref InstanceType
+      SecurityGroups:
+        - !Ref InstanceSecurityGroup
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash -v
+          ${InstanceUserData}
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: my-auto-scaling-group
+      
+      VPCZoneIdentifier:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      DesiredCapacity: !Ref DesiredCapacity
+      LaunchConfigurationName: !Ref LaunchConfig
+      MaxSize: !Ref MaxSize
+      MinSize: !Ref MinSize 
+      TargetGroupARNs:
+        - !Ref ALBTargetGroup
+
+  DNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      AliasTarget:
+        DNSName: !GetAtt ALB.DNSName
+        EvaluateTargetHealth: true
+        HostedZoneId: !GetAtt ALB.CanonicalHostedZoneID
+      HostedZoneId: !Ref HostedZoneId 
+      Name: !Ref RecordName
+      Type: !Ref RecordType
+
+
+
+
+      
+
+
+#In the above code, we create a DNSRecord resource that creates a Route 53 record for our ALB. The HostedZoneId property is the ID of your Route 53 hosted zone, and the Name property is the domain name that you want to use for your ALB. The AliasTarget property is set to the DNS name of the ALB, and the HostedZoneId is looked up in the ALBHostedZoneMap mapping based on the current AWS region.
+
+#Finally, we define the ALBHostedZoneMap mapping, which maps AWS regions to the IDs of the hosted zones for the ALB. You'll need to update the IDs in this mapping to match the IDs for your ALB in each region.
